@@ -83,6 +83,41 @@ def search_crossref_sources(
     return list(uniq.values())
 
 
+def load_sources_from_csv(path: str) -> list[SourceSpec]:
+    """Load user-curated references from CSV with columns: URL, Reference, Citation."""
+    df = pd.read_csv(path)
+    cols = {c.lower(): c for c in df.columns}
+    if "url" not in cols:
+        raise ValueError("references CSV must include a URL column")
+
+    out = []
+    for _, row in df.iterrows():
+        url = str(row[cols["url"]]).strip()
+        if not url or url.lower() == "nan":
+            continue
+        ref_col = cols.get("reference")
+        cit_col = cols.get("citation")
+        ref = str(row[ref_col]).strip() if ref_col else url
+        if not ref or ref.lower() == "nan":
+            ref = url
+        citation = str(row[cit_col]).strip() if cit_col else ""
+        if citation.lower() == "nan":
+            citation = ""
+        out.append(SourceSpec(url=url, reference=ref, citation=citation))
+
+    # unique by URL preserving first appearance
+    uniq = {}
+    for src in out:
+        if src.url not in uniq:
+            uniq[src.url] = src
+    return list(uniq.values())
+
+
+def save_reference_candidates(sources: list[SourceSpec], csv_path: str = "reference_candidates.csv") -> None:
+    rows = [{"Reference": s.reference, "URL": s.url, "Citation": s.citation} for s in sources]
+    pd.DataFrame(rows).to_csv(csv_path, index=False)
+    print(f"Saved reference candidate list: {csv_path}")
+
 
 def _format_crossref_citation(item: dict) -> str:
     title = (item.get("title") or [""])[0]
