@@ -32,6 +32,7 @@ def ensure_packages():
 def parse_args():
     p = argparse.ArgumentParser()
     p.add_argument("--output_dir", default=".", help="Folder where extracted matrix and figures are stored")
+    p.add_argument("--references_csv", default=None, help="Optional CSV of curated references with URL/Reference/Citation")
     return p.parse_args()
 
 
@@ -42,23 +43,35 @@ def main():
 
     ensure_packages()
 
-    from literature_data_extraction import search_crossref_sources, build_literature_matrix, save_outputs
+    from literature_data_extraction import (
+        search_crossref_sources,
+        load_sources_from_csv,
+        save_reference_candidates,
+        build_literature_matrix,
+        save_outputs,
+    )
     from colab_qspr_workflow import run_workflow
+    from colab_publication_workflow import run_publication_workflow
 
-    # automatic online literature discovery for last 30 years (1996-2026)
-    sources = search_crossref_sources(year_from=1996, year_to=2026, rows=80)
-    print(f"Discovered candidate sources: {len(sources)}")
+    if args.references_csv:
+        sources = load_sources_from_csv(args.references_csv)
+        print(f"Loaded curated references: {len(sources)} from {args.references_csv}")
+    else:
+        # automatic online literature discovery for last 30 years (1996-2026)
+        sources = search_crossref_sources(year_from=1996, year_to=2026, rows=80)
+        print(f"Discovered candidate sources: {len(sources)}")
+        save_reference_candidates(sources, csv_path=str(outdir / "reference_candidates.csv"))
 
     matrix = build_literature_matrix(sources)
     if matrix.empty:
-        print("WARNING: No machine-readable rows extracted from discovered sources.")
-        print("Falling back to built-in curated starter rows in colab_qspr_workflow.py")
-        df, metrics, _ = run_workflow()
-    else:
-        base = outdir / "graphene_polymer_literature_matrix"
-        save_outputs(matrix, base_name=str(base))
-        csv_path = outdir / "graphene_polymer_literature_matrix.csv"
-        df, metrics, _ = run_workflow(local_csv=str(csv_path))
+        raise RuntimeError("No machine-readable rows extracted. Edit reference_candidates.csv (or provide --references_csv) with publisher/supplement links and rerun.")
+
+    base = outdir / "graphene_polymer_literature_matrix"
+    save_outputs(matrix, base_name=str(base))
+    csv_path = outdir / "graphene_polymer_literature_matrix.csv"
+
+    df, metrics, _ = run_workflow(local_csv=str(csv_path))
+    pub_report = run_publication_workflow(local_csv=str(csv_path))
 
     print("\nExtraction + modeling complete.")
     print("Rows used:", len(df))
@@ -68,3 +81,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
