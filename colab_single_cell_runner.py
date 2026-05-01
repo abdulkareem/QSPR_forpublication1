@@ -33,10 +33,13 @@ def parse_args():
     p = argparse.ArgumentParser()
     p.add_argument("--output_dir", default=".", help="Folder where extracted matrix and figures are stored")
     p.add_argument("--references_csv", default=None, help="Optional CSV of curated references with URL/Reference/Citation")
-    p.add_argument("--list_only", action="store_true", help="Only generate reference candidate list, no extraction/modeling")
+    p.add_argument("--list_only", "--list-only", dest="list_only", action="store_true", help="Only generate reference candidate list, no extraction/modeling")
     p.add_argument("--uploaded_dir", default=None, help="Directory containing uploaded table files (csv/xls/xlsx/html)")
     p.add_argument("--uploaded_metadata_csv", default=None, help="Optional metadata CSV mapping uploaded files to Reference/Citation")
-    return p.parse_args()
+    args, unknown = p.parse_known_args()
+    if unknown:
+        print(f"Warning: ignoring unknown arguments: {unknown}")
+    return args
 
 
 def main():
