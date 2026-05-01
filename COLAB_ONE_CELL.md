@@ -8,7 +8,10 @@
 %cd /content/QSPR_forpublication1
 !git pull
 
-# Run publication workflow (creates dataset + trains model + SHAP plots)
+# Run automatic online literature search (last 30 years) + extraction + QSPR modeling
+!python colab_single_cell_runner.py --output_dir "/content"
+
+# (Optional) run publication-style augmented workflow too
 !python colab_publication_workflow.py
 
 # Optional: persist outputs to Google Drive

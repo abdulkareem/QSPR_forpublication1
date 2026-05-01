@@ -42,13 +42,12 @@ def main():
 
     ensure_packages()
 
-    from literature_data_extraction import SourceSpec, build_literature_matrix, save_outputs
+    from literature_data_extraction import search_crossref_sources, build_literature_matrix, save_outputs
     from colab_qspr_workflow import run_workflow
 
-    sources = [
-        SourceSpec(url="https://example.com/open-access-paper-1", reference="doi:xx.xxxx/xxxxx1"),
-        SourceSpec(url="https://example.com/open-access-paper-2", reference="doi:xx.xxxx/xxxxx2"),
-    ]
+    # automatic online literature discovery for last 30 years (1996-2026)
+    sources = search_crossref_sources(year_from=1996, year_to=2026, rows=80)
+    print(f"Discovered candidate sources: {len(sources)}")
 
     matrix = build_literature_matrix(sources)
     if matrix.empty:

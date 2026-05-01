@@ -1,9 +1,9 @@
-"""Utilities to collect QSPR descriptors from published literature (online).
+"""Online literature discovery + tabular extraction for QSPR dataset building.
 
-Designed for Google Colab/free-tier:
-- lightweight deps (pandas, requests, beautifulsoup4, lxml)
-- table-first extraction from open web pages / supplementary CSV links
-- normalization to a common descriptor matrix + reference traceability
+This module now supports:
+1) Searching published literature online (Crossref API) for the last 30 years.
+2) Identifying candidate article URLs/DOIs.
+3) Extracting HTML/supplement tables and normalizing into canonical matrix columns.
 """
 
 from __future__ import annotations
@@ -17,7 +17,6 @@ import pandas as pd
 import requests
 from bs4 import BeautifulSoup
 
-# Canonical schema requested for QSPR modeling
 CANONICAL_COLUMNS = [
     "Graphene_Surface_Area_m2_g",
     "Polymer_Weight_pct",
@@ -30,13 +29,12 @@ CANONICAL_COLUMNS = [
     "Source_URL",
 ]
 
-# Flexible column aliases seen in literature
 ALIASES = {
     "Graphene_Surface_Area_m2_g": ["surface area", "bet", "ssa", "m2/g", "m^2/g"],
     "Polymer_Weight_pct": ["polymer wt", "wt%", "weight %", "mass fraction", "loading"],
     "Doping_Level": ["doping", "dopant", "oxidation level", "protonation"],
     "Functional_Group_Electronegativity": ["electronegativity", "x_fg", "functional group en"],
-    "Polymer_Type": ["polymer", "conductive polymer", "pani", "ppy", "pedot"],
+    "Polymer_Type": ["polymer", "conductive polymer", "pani", "pedot"],
     "Electrolyte_Type": ["electrolyte", "electrolyte type", "electrolyte solution"],
     "Specific_Capacitance_F_g": ["specific capacitance", "capacitance", "f/g", "f g-1", "f g^-1"],
 }
@@ -45,7 +43,41 @@ ALIASES = {
 @dataclass
 class SourceSpec:
     url: str
-    reference: str  # DOI or full citation short-form
+    reference: str
+
+
+def search_crossref_sources(
+    query: str = "graphene conductive polymer supercapacitor specific capacitance PANI PEDOT",
+    year_from: int = 1996,
+    year_to: int = 2026,
+    rows: int = 60,
+) -> list[SourceSpec]:
+    """Discover article URLs/DOIs from Crossref for the last 30 years."""
+    endpoint = "https://api.crossref.org/works"
+    params = {
+        "query": query,
+        "filter": f"from-pub-date:{year_from}-01-01,until-pub-date:{year_to}-12-31",
+        "rows": rows,
+        "select": "DOI,URL,title,published-print,published-online,issued",
+    }
+    r = requests.get(endpoint, params=params, timeout=45)
+    r.raise_for_status()
+    items = r.json().get("message", {}).get("items", [])
+
+    out = []
+    for it in items:
+        doi = it.get("DOI")
+        url = it.get("URL")
+        if not url:
+            continue
+        ref = f"doi:{doi}" if doi else url
+        out.append(SourceSpec(url=url, reference=ref))
+
+    # unique by URL
+    uniq = {}
+    for s in out:
+        uniq[s.url] = s
+    return list(uniq.values())
 
 
 def _clean_name(name: str) -> str:
@@ -75,15 +107,12 @@ def _coerce_numeric(df: pd.DataFrame, columns: Iterable[str]) -> pd.DataFrame:
 
 
 def extract_tables_from_url(url: str) -> list[pd.DataFrame]:
-    """Download page and extract all HTML tables."""
     r = requests.get(url, timeout=40)
     r.raise_for_status()
-    # pandas.read_html is compact and robust for table extraction
     return pd.read_html(io.StringIO(r.text))
 
 
 def extract_supplement_links(url: str) -> list[str]:
-    """Find likely supplementary CSV/XLS/XLSX links on a paper page."""
     r = requests.get(url, timeout=40)
     r.raise_for_status()
     soup = BeautifulSoup(r.text, "html.parser")
@@ -96,12 +125,11 @@ def extract_supplement_links(url: str) -> list[str]:
 
 
 def normalize_table(df: pd.DataFrame, reference: str, source_url: str) -> pd.DataFrame:
-    """Map arbitrary table columns to canonical QSPR descriptor schema."""
     mapped = {}
     for c in df.columns:
-        target = _match_column(c)
-        if target and target not in mapped:
-            mapped[target] = c
+        t = _match_column(c)
+        if t and t not in mapped:
+            mapped[t] = c
 
     if "Specific_Capacitance_F_g" not in mapped:
         return pd.DataFrame(columns=CANONICAL_COLUMNS)
@@ -110,13 +138,11 @@ def normalize_table(df: pd.DataFrame, reference: str, source_url: str) -> pd.Dat
     for tgt, src in mapped.items():
         out[tgt] = df[src]
 
-    # Ensure categorical defaults if absent
     if "Polymer_Type" not in out:
         out["Polymer_Type"] = "Unknown"
     if "Electrolyte_Type" not in out:
         out["Electrolyte_Type"] = "Unknown"
 
-    # Add traceability columns
     out["Reference"] = reference
     out["Source_URL"] = source_url
 
@@ -129,13 +155,11 @@ def normalize_table(df: pd.DataFrame, reference: str, source_url: str) -> pd.Dat
     ]
     out = _coerce_numeric(out, num_cols)
 
-    # retain rows that at least have target + one major descriptor
     keep = out["Specific_Capacitance_F_g"].notna() & (
         out["Graphene_Surface_Area_m2_g"].notna() | out["Polymer_Weight_pct"].notna()
     )
     out = out.loc[keep].copy()
 
-    # add missing canonical columns
     for c in CANONICAL_COLUMNS:
         if c not in out.columns:
             out[c] = pd.NA
@@ -144,31 +168,28 @@ def normalize_table(df: pd.DataFrame, reference: str, source_url: str) -> pd.Dat
 
 
 def build_literature_matrix(sources: list[SourceSpec]) -> pd.DataFrame:
-    """Create a unified data matrix from multiple online literature sources."""
     collected = []
     for s in sources:
         try:
             tables = extract_tables_from_url(s.url)
-        except Exception as exc:
-            print(f"Skip {s.url} (download/read_html failed): {exc}")
+        except Exception:
             continue
 
         for t in tables:
-            norm = normalize_table(t, reference=s.reference, source_url=s.url)
+            norm = normalize_table(t, s.reference, s.url)
             if len(norm):
                 collected.append(norm)
 
-        # Optional: also try direct supplementary tabular links
         try:
-            supp_links = extract_supplement_links(s.url)
-            for link in supp_links:
+            supp = extract_supplement_links(s.url)
+            for link in supp:
                 if link.lower().endswith(".csv"):
                     d = pd.read_csv(link)
                 elif link.lower().endswith((".xls", ".xlsx")):
                     d = pd.read_excel(link)
                 else:
                     continue
-                norm = normalize_table(d, reference=s.reference, source_url=link)
+                norm = normalize_table(d, s.reference, link)
                 if len(norm):
                     collected.append(norm)
         except Exception:
@@ -177,9 +198,8 @@ def build_literature_matrix(sources: list[SourceSpec]) -> pd.DataFrame:
     if not collected:
         return pd.DataFrame(columns=CANONICAL_COLUMNS)
 
-    matrix = pd.concat(collected, ignore_index=True)
-    matrix = matrix.drop_duplicates().reset_index(drop=True)
-    return matrix
+    mat = pd.concat(collected, ignore_index=True).drop_duplicates().reset_index(drop=True)
+    return mat
 
 
 def save_outputs(matrix: pd.DataFrame, base_name: str = "graphene_polymer_literature_matrix"):
@@ -189,14 +209,9 @@ def save_outputs(matrix: pd.DataFrame, base_name: str = "graphene_polymer_litera
 
 
 if __name__ == "__main__":
-    # Replace with open-access article URLs + DOI/citation tags.
-    # Tip: start with publisher pages that render tables in HTML or provide supplementary CSV/XLS.
-    SOURCES = [
-        SourceSpec(url="https://example.com/open-access-paper-1", reference="doi:xx.xxxx/xxxxx1"),
-        SourceSpec(url="https://example.com/open-access-paper-2", reference="doi:xx.xxxx/xxxxx2"),
-    ]
-
-    matrix = build_literature_matrix(SOURCES)
-    print("Rows extracted:", len(matrix))
+    sources = search_crossref_sources(year_from=1996, year_to=2026, rows=80)
+    print(f"Discovered sources: {len(sources)}")
+    matrix = build_literature_matrix(sources)
+    print("Extracted rows:", len(matrix))
     print(matrix.head())
     save_outputs(matrix)
