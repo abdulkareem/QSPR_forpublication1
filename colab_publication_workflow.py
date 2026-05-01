@@ -21,19 +21,19 @@ from xgboost import XGBRegressor
 import shap
 
 RANDOM_STATE = 42
-np.random.seed(RANDOM_STATE)
+RNG = np.random.default_rng(RANDOM_STATE)
 
 
 def build_representative_literature_dataset(n_samples: int = 60) -> pd.DataFrame:
     """Create >=50 representative samples spanning 2006-2026 literature-like conditions."""
-    years = np.random.randint(2006, 2027, size=n_samples)
-    polymer_type = np.random.choice(["PANI", "PEDOT:PSS"], size=n_samples, p=[0.55, 0.45])
-    electrolyte_type = np.random.choice(["Acidic", "Basic", "Neutral"], size=n_samples, p=[0.45, 0.30, 0.25])
+    years = RNG.integers(2006, 2027, size=n_samples)
+    polymer_type = RNG.choice(["PANI", "PEDOT:PSS"], size=n_samples, p=[0.55, 0.45])
+    electrolyte_type = RNG.choice(["Acidic", "Basic", "Neutral"], size=n_samples, p=[0.45, 0.30, 0.25])
 
-    polymer_wt = np.random.uniform(3, 70, size=n_samples)
-    ssa = np.random.uniform(120, 2300, size=n_samples)      # m2/g
-    pore_nm = np.random.uniform(1.5, 24.0, size=n_samples)  # nm
-    scan_rate = np.random.choice([5, 10, 20, 50, 100], size=n_samples)
+    polymer_wt = RNG.uniform(3, 70, size=n_samples)
+    ssa = RNG.uniform(120, 2300, size=n_samples)      # m2/g
+    pore_nm = RNG.uniform(1.5, 24.0, size=n_samples)  # nm
+    scan_rate = RNG.choice([5, 10, 20, 50, 100], size=n_samples)
 
     p_factor = pd.Series(polymer_type).map({"PANI": 1.05, "PEDOT:PSS": 1.10}).values
     e_factor = pd.Series(electrolyte_type).map({"Acidic": 1.12, "Basic": 1.00, "Neutral": 0.93}).values
@@ -44,7 +44,7 @@ def build_representative_literature_dataset(n_samples: int = 60) -> pd.DataFrame
     pore_term = -0.95 * (pore_nm - 6.5) ** 2 + 45
     rate_term = -0.45 * scan_rate
 
-    cap = (loading + area_term + pore_term + rate_term) * p_factor * e_factor + np.random.normal(0, 18, n_samples)
+    cap = (loading + area_term + pore_term + rate_term) * p_factor * e_factor + RNG.normal(0, 18, n_samples)
     cap = np.clip(cap, 30, None)
 
     df = pd.DataFrame({
@@ -68,7 +68,7 @@ def noise_augment(df: pd.DataFrame, copies: int = 5, noise_level: float = 0.05) 
         d = df.copy()
         for c in num_cols:
             sigma = noise_level * d[c].std()
-            d[c] = d[c] + np.random.normal(0, sigma, size=len(d))
+            d[c] = d[c] + RNG.normal(0, sigma, size=len(d))
         d["Material_ID"] = d["Material_ID"] + f"_N{i+1}"
         aug.append(d)
     out = pd.concat(aug, ignore_index=True)

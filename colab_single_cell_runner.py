@@ -51,13 +51,14 @@ def main():
 
     matrix = build_literature_matrix(sources)
     if matrix.empty:
-        raise RuntimeError("No rows extracted. Replace `sources` with valid open-access URLs.")
-
-    base = outdir / "graphene_polymer_literature_matrix"
-    save_outputs(matrix, base_name=str(base))
-
-    csv_path = outdir / "graphene_polymer_literature_matrix.csv"
-    df, metrics, _ = run_workflow(local_csv=str(csv_path))
+        print("WARNING: No machine-readable rows extracted from discovered sources.")
+        print("Falling back to built-in curated starter rows in colab_qspr_workflow.py")
+        df, metrics, _ = run_workflow()
+    else:
+        base = outdir / "graphene_polymer_literature_matrix"
+        save_outputs(matrix, base_name=str(base))
+        csv_path = outdir / "graphene_polymer_literature_matrix.csv"
+        df, metrics, _ = run_workflow(local_csv=str(csv_path))
 
     print("\nExtraction + modeling complete.")
     print("Rows used:", len(df))
