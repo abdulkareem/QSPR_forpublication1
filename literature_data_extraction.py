@@ -83,6 +83,96 @@ def search_crossref_sources(
     return list(uniq.values())
 
 
+def load_sources_from_csv(path: str) -> list[SourceSpec]:
+    """Load user-curated references from CSV with columns: URL, Reference, Citation."""
+    df = pd.read_csv(path)
+    cols = {c.lower(): c for c in df.columns}
+    if "url" not in cols:
+        raise ValueError("references CSV must include a URL column")
+
+    out = []
+    for _, row in df.iterrows():
+        url = str(row[cols["url"]]).strip()
+        if not url or url.lower() == "nan":
+            continue
+        ref_col = cols.get("reference")
+        cit_col = cols.get("citation")
+        ref = str(row[ref_col]).strip() if ref_col else url
+        if not ref or ref.lower() == "nan":
+            ref = url
+        citation = str(row[cit_col]).strip() if cit_col else ""
+        if citation.lower() == "nan":
+            citation = ""
+        out.append(SourceSpec(url=url, reference=ref, citation=citation))
+
+    # unique by URL preserving first appearance
+    uniq = {}
+    for src in out:
+        if src.url not in uniq:
+            uniq[src.url] = src
+    return list(uniq.values())
+
+
+def save_reference_candidates(sources: list[SourceSpec], csv_path: str = "reference_candidates.csv") -> None:
+    rows = []
+    for s in sources:
+        doi = s.reference.replace("doi:", "") if str(s.reference).startswith("doi:") else ""
+        rows.append({
+            "Reference": s.reference,
+            "URL": s.url,
+            "DOI": doi,
+            "Download_URL": f"https://doi.org/{doi}" if doi else s.url,
+            "Citation": s.citation,
+            "Use_for_manual_download": "YES",
+            "Notes": "Replace URL with direct article/supplement table links if needed",
+        })
+    pd.DataFrame(rows).to_csv(csv_path, index=False)
+    print(f"Saved reference candidate list: {csv_path}")
+
+
+def build_literature_matrix_from_uploaded_files(upload_dir: str, metadata_csv: str | None = None) -> pd.DataFrame:
+    """Extract tabular data from uploaded CSV/XLS/XLSX/HTML files and attach citations."""
+    base = Path(upload_dir)
+    files = sorted([p for p in base.glob("**/*") if p.suffix.lower() in {".csv", ".xls", ".xlsx", ".html", ".htm"}])
+    if not files:
+        return pd.DataFrame(columns=CANONICAL_COLUMNS)
+
+    meta = {}
+    if metadata_csv:
+        mdf = pd.read_csv(metadata_csv)
+        lower = {c.lower(): c for c in mdf.columns}
+        name_col = lower.get("filename") or lower.get("file")
+        if name_col:
+            for _, r in mdf.iterrows():
+                key = str(r[name_col]).strip()
+                meta[key] = {
+                    "reference": str(r[lower.get("reference")]).strip() if lower.get("reference") else key,
+                    "citation": str(r[lower.get("citation")]).strip() if lower.get("citation") else "",
+                    "source_url": str(r[lower.get("source_url")]).strip() if lower.get("source_url") else key,
+                }
+
+    collected = []
+    for fp in files:
+        entry = meta.get(fp.name, {"reference": fp.name, "citation": "", "source_url": fp.name})
+        try:
+            if fp.suffix.lower() == ".csv":
+                tables = [pd.read_csv(fp)]
+            elif fp.suffix.lower() in {".xls", ".xlsx"}:
+                tables = [pd.read_excel(fp)]
+            else:
+                tables = pd.read_html(str(fp))
+        except Exception:
+            continue
+
+        for t in tables:
+            norm = normalize_table(t, entry["reference"], entry["source_url"], entry["citation"])
+            if len(norm):
+                collected.append(norm)
+
+    if not collected:
+        return pd.DataFrame(columns=CANONICAL_COLUMNS)
+    return pd.concat(collected, ignore_index=True).drop_duplicates().reset_index(drop=True)
+
 
 def _format_crossref_citation(item: dict) -> str:
     title = (item.get("title") or [""])[0]
