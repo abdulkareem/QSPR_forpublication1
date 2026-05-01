@@ -114,9 +114,64 @@ def load_sources_from_csv(path: str) -> list[SourceSpec]:
 
 
 def save_reference_candidates(sources: list[SourceSpec], csv_path: str = "reference_candidates.csv") -> None:
-    rows = [{"Reference": s.reference, "URL": s.url, "Citation": s.citation} for s in sources]
+    rows = []
+    for s in sources:
+        doi = s.reference.replace("doi:", "") if str(s.reference).startswith("doi:") else ""
+        rows.append({
+            "Reference": s.reference,
+            "URL": s.url,
+            "DOI": doi,
+            "Download_URL": f"https://doi.org/{doi}" if doi else s.url,
+            "Citation": s.citation,
+            "Use_for_manual_download": "YES",
+            "Notes": "Replace URL with direct article/supplement table links if needed",
+        })
     pd.DataFrame(rows).to_csv(csv_path, index=False)
     print(f"Saved reference candidate list: {csv_path}")
+
+
+def build_literature_matrix_from_uploaded_files(upload_dir: str, metadata_csv: str | None = None) -> pd.DataFrame:
+    """Extract tabular data from uploaded CSV/XLS/XLSX/HTML files and attach citations."""
+    base = Path(upload_dir)
+    files = sorted([p for p in base.glob("**/*") if p.suffix.lower() in {".csv", ".xls", ".xlsx", ".html", ".htm"}])
+    if not files:
+        return pd.DataFrame(columns=CANONICAL_COLUMNS)
+
+    meta = {}
+    if metadata_csv:
+        mdf = pd.read_csv(metadata_csv)
+        lower = {c.lower(): c for c in mdf.columns}
+        name_col = lower.get("filename") or lower.get("file")
+        if name_col:
+            for _, r in mdf.iterrows():
+                key = str(r[name_col]).strip()
+                meta[key] = {
+                    "reference": str(r[lower.get("reference")]).strip() if lower.get("reference") else key,
+                    "citation": str(r[lower.get("citation")]).strip() if lower.get("citation") else "",
+                    "source_url": str(r[lower.get("source_url")]).strip() if lower.get("source_url") else key,
+                }
+
+    collected = []
+    for fp in files:
+        entry = meta.get(fp.name, {"reference": fp.name, "citation": "", "source_url": fp.name})
+        try:
+            if fp.suffix.lower() == ".csv":
+                tables = [pd.read_csv(fp)]
+            elif fp.suffix.lower() in {".xls", ".xlsx"}:
+                tables = [pd.read_excel(fp)]
+            else:
+                tables = pd.read_html(str(fp))
+        except Exception:
+            continue
+
+        for t in tables:
+            norm = normalize_table(t, entry["reference"], entry["source_url"], entry["citation"])
+            if len(norm):
+                collected.append(norm)
+
+    if not collected:
+        return pd.DataFrame(columns=CANONICAL_COLUMNS)
+    return pd.concat(collected, ignore_index=True).drop_duplicates().reset_index(drop=True)
 
 
 def _format_crossref_citation(item: dict) -> str:
