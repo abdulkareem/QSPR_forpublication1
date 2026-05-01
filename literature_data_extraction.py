@@ -26,6 +26,7 @@ CANONICAL_COLUMNS = [
     "Electrolyte_Type",
     "Specific_Capacitance_F_g",
     "Reference",
+    "Citation",
     "Source_URL",
 ]
 
@@ -44,6 +45,7 @@ ALIASES = {
 class SourceSpec:
     url: str
     reference: str
+    citation: str = ""
 
 
 def search_crossref_sources(
@@ -58,7 +60,7 @@ def search_crossref_sources(
         "query": query,
         "filter": f"from-pub-date:{year_from}-01-01,until-pub-date:{year_to}-12-31",
         "rows": rows,
-        "select": "DOI,URL,title,published-print,published-online,issued",
+        "select": "DOI,URL,title,container-title,author,issued",
     }
     r = requests.get(endpoint, params=params, timeout=45)
     r.raise_for_status()
@@ -71,7 +73,8 @@ def search_crossref_sources(
         if not url:
             continue
         ref = f"doi:{doi}" if doi else url
-        out.append(SourceSpec(url=url, reference=ref))
+        citation = _format_crossref_citation(it)
+        out.append(SourceSpec(url=url, reference=ref, citation=citation))
 
     # unique by URL
     uniq = {}
@@ -79,6 +82,31 @@ def search_crossref_sources(
         uniq[s.url] = s
     return list(uniq.values())
 
+
+
+def _format_crossref_citation(item: dict) -> str:
+    title = (item.get("title") or [""])[0]
+    container = (item.get("container-title") or [""])[0]
+    year = ""
+    issued = item.get("issued", {}).get("date-parts", [])
+    if issued and issued[0]:
+        year = str(issued[0][0])
+
+    authors = item.get("author", [])
+    a_txt = ""
+    if authors:
+        names = []
+        for a in authors[:3]:
+            fam = a.get("family", "")
+            giv = a.get("given", "")
+            names.append((fam + (", " + giv if giv else "")).strip(", "))
+        a_txt = "; ".join(names)
+        if len(authors) > 3:
+            a_txt += " et al."
+
+    doi = item.get("DOI", "")
+    parts = [p for p in [a_txt, year, title, container, f"doi:{doi}" if doi else ""] if p]
+    return ". ".join(parts)
 
 def _clean_name(name: str) -> str:
     return re.sub(r"\s+", " ", str(name).strip().lower())
@@ -124,7 +152,7 @@ def extract_supplement_links(url: str) -> list[str]:
     return sorted(set(links))
 
 
-def normalize_table(df: pd.DataFrame, reference: str, source_url: str) -> pd.DataFrame:
+def normalize_table(df: pd.DataFrame, reference: str, source_url: str, citation: str = "") -> pd.DataFrame:
     mapped = {}
     for c in df.columns:
         t = _match_column(c)
@@ -144,6 +172,7 @@ def normalize_table(df: pd.DataFrame, reference: str, source_url: str) -> pd.Dat
         out["Electrolyte_Type"] = "Unknown"
 
     out["Reference"] = reference
+    out["Citation"] = citation
     out["Source_URL"] = source_url
 
     num_cols = [
@@ -176,7 +205,7 @@ def build_literature_matrix(sources: list[SourceSpec]) -> pd.DataFrame:
             continue
 
         for t in tables:
-            norm = normalize_table(t, s.reference, s.url)
+            norm = normalize_table(t, s.reference, s.url, s.citation)
             if len(norm):
                 collected.append(norm)
 
@@ -189,7 +218,7 @@ def build_literature_matrix(sources: list[SourceSpec]) -> pd.DataFrame:
                     d = pd.read_excel(link)
                 else:
                     continue
-                norm = normalize_table(d, s.reference, link)
+                norm = normalize_table(d, s.reference, link, s.citation)
                 if len(norm):
                     collected.append(norm)
         except Exception:

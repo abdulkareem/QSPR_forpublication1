@@ -19,3 +19,6 @@ from google.colab import drive
 drive.mount('/content/drive')
 !cp -v graphene_pani_pedotpss_dataset_augmented.csv parity_plot_xgb.png shap_summary_xgb.png /content/drive/MyDrive/
 ```
+
+
+Note: Extracted matrix includes `Reference`, `Citation`, and `Source_URL` columns for manuscript-ready citation tracking.
