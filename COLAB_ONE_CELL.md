@@ -17,6 +17,7 @@ if not os.path.isdir('/content/QSPR_forpublication1'):
 #    then upload as /content/my_references.csv and rerun with:
 # !python colab_single_cell_runner.py --output_dir "/content" --references_csv "/content/my_references.csv"
 
+# Extraction-first then strict publication evaluation runs inside this command
 # Optional: persist outputs to Google Drive
 from google.colab import drive
 drive.mount('/content/drive')
