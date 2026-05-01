@@ -44,6 +44,7 @@ def main():
 
     from literature_data_extraction import search_crossref_sources, build_literature_matrix, save_outputs
     from colab_qspr_workflow import run_workflow
+    from colab_publication_workflow import run_publication_workflow
 
     # automatic online literature discovery for last 30 years (1996-2026)
     sources = search_crossref_sources(year_from=1996, year_to=2026, rows=80)
@@ -51,14 +52,14 @@ def main():
 
     matrix = build_literature_matrix(sources)
     if matrix.empty:
-        print("WARNING: No machine-readable rows extracted from discovered sources.")
-        print("Falling back to built-in curated starter rows in colab_qspr_workflow.py")
-        df, metrics, _ = run_workflow()
-    else:
-        base = outdir / "graphene_polymer_literature_matrix"
-        save_outputs(matrix, base_name=str(base))
-        csv_path = outdir / "graphene_polymer_literature_matrix.csv"
-        df, metrics, _ = run_workflow(local_csv=str(csv_path))
+        raise RuntimeError("No machine-readable rows extracted. Curate the dataset manually and rerun.")
+
+    base = outdir / "graphene_polymer_literature_matrix"
+    save_outputs(matrix, base_name=str(base))
+    csv_path = outdir / "graphene_polymer_literature_matrix.csv"
+
+    df, metrics, _ = run_workflow(local_csv=str(csv_path))
+    pub_report = run_publication_workflow(local_csv=str(csv_path))
 
     print("\nExtraction + modeling complete.")
     print("Rows used:", len(df))
@@ -68,3 +69,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
