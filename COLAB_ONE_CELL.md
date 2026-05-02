@@ -37,3 +37,11 @@ Notes:
 
 # FAST PATH: if you already have complete curated 150-row CSV uploaded (e.g., /content/graphene_qspr_150.csv), run directly:
 # !python colab_single_cell_runner.py --output_dir "/content" --dataset_csv "/content/graphene_qspr_150.csv"
+
+
+# If you uploaded from desktop in Colab, verify actual path first:
+# from google.colab import files
+# files.upload()
+# !find /content -maxdepth 2 -name "*.csv"
+# Then run:
+# !python colab_single_cell_runner.py --output_dir "/content" --dataset_csv "/content/<exact_uploaded_name>.csv"
