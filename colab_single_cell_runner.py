@@ -3,9 +3,7 @@
 Example:
 !python colab_single_cell_runner.py --output_dir "/content"
 """
-
 from __future__ import annotations
-
 import argparse
 import subprocess
 import sys
@@ -27,8 +25,6 @@ def ensure_packages() -> None:
         "openpyxl",
     ]
     subprocess.check_call([sys.executable, "-m", "pip", "install", "-q", *pkgs])
-
-
 def parse_args():
     p = argparse.ArgumentParser()
     p.add_argument("--output_dir", default=".", help="Folder where extracted matrix and figures are stored")
@@ -88,7 +84,6 @@ def main():
     args = parse_args()
     outdir = Path(args.output_dir).expanduser().resolve()
     outdir.mkdir(parents=True, exist_ok=True)
-
     ensure_packages()
 
     from literature_data_extraction import (
@@ -157,7 +152,6 @@ def main():
     print(metrics)
     print("Publication report:", pub_report)
     print(f"\nOutputs saved under: {outdir}")
-
-
 if __name__ == "__main__":
     main()
+
