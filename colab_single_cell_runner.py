@@ -36,6 +36,8 @@ def parse_args():
     p.add_argument("--list_only", "--list-only", dest="list_only", action="store_true", help="Only generate reference candidate list, no extraction/modeling")
     p.add_argument("--uploaded_dir", default=None, help="Directory containing uploaded table files (csv/xls/xlsx/html)")
     p.add_argument("--uploaded_metadata_csv", default=None, help="Optional metadata CSV mapping uploaded files to Reference/Citation")
+    p.add_argument("--download_dir", default=None, help="Optional folder to auto-download accessible papers/supplements")
+    p.add_argument("--download_only", action="store_true", help="Only download candidate literature files and exit")
     args, unknown = p.parse_known_args()
     if unknown:
         print(f"Warning: ignoring unknown arguments: {unknown}")
@@ -55,10 +57,25 @@ def main():
         save_reference_candidates,
         build_literature_matrix,
         build_literature_matrix_from_uploaded_files,
+        download_sources,
         save_outputs,
     )
     from colab_qspr_workflow import run_workflow
     from colab_publication_workflow import run_publication_workflow
+
+
+    # Optional: auto-download accessible literature files before extraction
+    if args.download_dir:
+        if args.references_csv:
+            dl_sources = load_sources_from_csv(args.references_csv)
+        else:
+            dl_sources = search_crossref_sources(year_from=1996, year_to=2026, rows=80)
+            save_reference_candidates(dl_sources, csv_path=str(outdir / "reference_candidates.csv"))
+        report = download_sources(dl_sources, outdir=args.download_dir)
+        print(report["Download_Status"].value_counts(dropna=False))
+        print(f"Download report saved at: {Path(args.download_dir) / 'download_report.csv'}")
+        if args.download_only:
+            return
 
     if args.uploaded_dir:
         matrix = build_literature_matrix_from_uploaded_files(args.uploaded_dir, metadata_csv=args.uploaded_metadata_csv)

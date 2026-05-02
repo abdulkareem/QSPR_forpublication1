@@ -13,11 +13,14 @@ if not os.path.isdir('/content/QSPR_forpublication1'):
 !python colab_single_cell_runner.py --output_dir "/content" --list_only
 # -> creates /content/reference_candidates.csv
 
-# STEP 2: after manual download, upload supplementary/article tables to /content/uploaded_literature_tables
+# STEP 2 (optional): auto-download accessible literature files (best effort)
+!python colab_single_cell_runner.py --output_dir "/content" --download_dir "/content/downloaded_literature" --download_only
+
+# STEP 3: after auto-download (or manual download), upload/organize supplementary/article tables in /content/uploaded_literature_tables
 # Optional metadata CSV (/content/uploaded_metadata.csv) columns:
 # filename,reference,citation,source_url
 
-# STEP 3: extract uploaded files into canonical dataset + run modeling/publication evaluation
+# STEP 4: extract uploaded files into canonical dataset + run modeling/publication evaluation
 !python colab_single_cell_runner.py --output_dir "/content" --uploaded_dir "/content/uploaded_literature_tables" --uploaded_metadata_csv "/content/uploaded_metadata.csv"
 
 # Optional: save outputs to Drive
@@ -27,5 +30,6 @@ drive.mount('/content/drive')
 ```
 
 Notes:
-- `reference_candidates.csv` includes `DOI` and `Download_URL` columns for manual downloading.
+- `reference_candidates.csv` includes `DOI` and `Download_URL` columns.
+- Auto-download is best-effort and only retrieves publicly reachable files; paywalled content may remain undownloaded in `download_report.csv`.
 - Uploaded-file extraction currently supports `.csv`, `.xls`, `.xlsx`, `.html`, `.htm` tables.

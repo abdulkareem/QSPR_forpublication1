@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import io
 import re
+from pathlib import Path
 from dataclasses import dataclass
 from typing import Iterable
 
@@ -334,3 +335,75 @@ if __name__ == "__main__":
     print("Extracted rows:", len(matrix))
     print(matrix.head())
     save_outputs(matrix)
+
+
+def _guess_download_links(url: str) -> list[str]:
+    links = [url]
+    if url.startswith("https://doi.org/"):
+        links.append(url.replace("https://doi.org/", "https://api.crossref.org/works/"))
+    try:
+        r = requests.get(url, timeout=40, allow_redirects=True)
+        final_url = r.url
+        links.append(final_url)
+        ct = r.headers.get("content-type", "").lower()
+        if "pdf" in ct or final_url.lower().endswith(".pdf"):
+            return [final_url]
+        soup = BeautifulSoup(r.text, "html.parser")
+        for a in soup.find_all("a", href=True):
+            h = requests.compat.urljoin(final_url, a["href"])
+            if re.search(r"(\.pdf($|\?)|supp|supplement|download)", h, flags=re.I):
+                links.append(h)
+    except Exception:
+        pass
+    # unique preserve order
+    out = []
+    seen = set()
+    for l in links:
+        if l not in seen:
+            seen.add(l)
+            out.append(l)
+    return out
+
+
+def download_sources(sources: list[SourceSpec], outdir: str, timeout: int = 45) -> pd.DataFrame:
+    """Best-effort downloader for reachable article/supplement files."""
+    out = Path(outdir)
+    out.mkdir(parents=True, exist_ok=True)
+
+    rows = []
+    for i, s in enumerate(sources, start=1):
+        candidates = _guess_download_links(s.url)
+        status = "not_downloaded"
+        saved_path = ""
+        used_url = ""
+        for c in candidates:
+            try:
+                r = requests.get(c, timeout=timeout, allow_redirects=True)
+                if r.status_code != 200:
+                    continue
+                ct = r.headers.get("content-type", "").lower()
+                if ("pdf" not in ct) and (not c.lower().endswith((".pdf", ".csv", ".xls", ".xlsx"))):
+                    continue
+                ext = ".pdf" if "pdf" in ct or c.lower().endswith(".pdf") else Path(c.split("?")[0]).suffix or ".bin"
+                safe = re.sub(r"[^a-zA-Z0-9._-]+", "_", s.reference)[:80]
+                fp = out / f"{i:03d}_{safe}{ext}"
+                fp.write_bytes(r.content)
+                status = "downloaded"
+                saved_path = str(fp)
+                used_url = c
+                break
+            except Exception:
+                continue
+
+        rows.append({
+            "Reference": s.reference,
+            "Source_URL": s.url,
+            "Download_Status": status,
+            "Downloaded_From": used_url,
+            "Local_File": saved_path,
+            "Citation": s.citation,
+        })
+
+    report = pd.DataFrame(rows)
+    report.to_csv(out / "download_report.csv", index=False)
+    return report
