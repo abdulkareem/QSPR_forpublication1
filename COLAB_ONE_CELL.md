@@ -33,3 +33,7 @@ Notes:
 - `reference_candidates.csv` includes `DOI` and `Download_URL` columns.
 - Auto-download is best-effort and only retrieves publicly reachable files; paywalled content may remain undownloaded in `download_report.csv`.
 - Uploaded-file extraction currently supports `.csv`, `.xls`, `.xlsx`, `.html`, `.htm` tables.
+
+
+# FAST PATH: if you already have complete curated 150-row CSV uploaded (e.g., /content/graphene_qspr_150.csv), run directly:
+# !python colab_single_cell_runner.py --output_dir "/content" --dataset_csv "/content/graphene_qspr_150.csv"
